@@ -577,7 +577,7 @@
                 </div>
               )}
 
-              {/* MODAL LAPORAN SISWA */}
+              {/* MODAL LAPORAN SISWA - FIX AUDIO FALLBACK BUTTON */}
               {adminSelectedStudent && (
                 <div className="fixed inset-0 bg-slate-900/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setAdminSelectedStudent(null)}>
                   <div className="bg-white rounded-[2rem] w-full max-w-lg max-h-[85vh] overflow-y-auto relative shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -596,8 +596,11 @@
                               <div className="space-y-3">
                                 <p className="text-sm font-medium text-slate-600 bg-white p-3 rounded-xl border border-slate-200">{prog.report}</p>
                                 {prog.audioData && prog.audioData !== "error_upload" && (
-                                  <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
-                                    <span className="text-[10px] font-bold text-emerald-600 uppercase flex items-center mb-2"><i className="ph-fill ph-headphones mr-1"></i> Rekaman Siswa</span>
+                                  <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex flex-col space-y-2">
+                                    <span className="text-[10px] font-bold text-emerald-600 uppercase flex items-center justify-between">
+                                      <span><i className="ph-fill ph-headphones mr-1"></i> Rekaman Siswa</span>
+                                      <a href={prog.audioData} target="_blank" className="text-blue-500 hover:underline">Buka Audio <i className="ph-bold ph-arrow-square-out"></i></a>
+                                    </span>
                                     <audio controls className="w-full h-10 outline-none rounded-lg" src={prog.audioData}></audio>
                                   </div>
                                 )}
@@ -665,13 +668,16 @@
                   <div><h2 className="text-xl font-extrabold text-slate-800 leading-none mb-1">Hari {selectedDay}</h2><p className="text-xs font-bold text-slate-400 uppercase tracking-wide">{labelText}</p></div>
                 </div>
 
-                {todayTask && (todayTask.desc || todayTask.url || (todayTask.type === 'quiz' && todayTask.questions?.length) || isAudioTask) ? (
+                {todayTask && (todayTask.desc || todayTask.url || todayTask.teacherAudioUrl || (todayTask.type === 'quiz' && todayTask.questions?.length) || isAudioTask) ? (
                   <div className="space-y-5">
                     
-                    {/* Pemutar Suara Arahan Guru */}
+                    {/* Pemutar Suara Arahan Guru - FIX BUG RENDER */}
                     {todayTask.teacherAudioUrl && (
-                      <div className="bg-emerald-100 border border-emerald-200 rounded-2xl p-4">
-                         <span className="font-bold text-emerald-800 flex items-center mb-2"><i className="ph-fill ph-speaker-high mr-2 text-xl"></i> Arahan Suara Guru:</span>
+                      <div className="bg-emerald-100 border border-emerald-200 rounded-2xl p-4 flex flex-col space-y-2">
+                         <span className="font-bold text-emerald-800 flex items-center justify-between">
+                           <span><i className="ph-fill ph-speaker-high mr-2 text-xl"></i> Arahan Suara Guru:</span>
+                           <a href={todayTask.teacherAudioUrl} target="_blank" className="text-xs text-blue-600 hover:underline">Buka Audio <i className="ph-bold ph-arrow-square-out"></i></a>
+                         </span>
                          <audio src={todayTask.teacherAudioUrl} controls className="w-full h-10 outline-none rounded-lg"></audio>
                       </div>
                     )}
