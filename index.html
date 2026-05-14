@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PJJ Quran Pro</title>
+  <title>PJJ Quran Pro (Supabase Edition)</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -32,35 +32,23 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // ==========================================
-    // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
-    // ==========================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyz5ghumMQP5SKPeFRimnQou3RAd9UPh3_9VooMjMaeJTe8IKcekzDmx_CLpTgkhBYy/exec"; 
-
-    // Pengganti google.script.run untuk berkomunikasi dengan GAS dari Vercel
-    const runApi = async (action, payload = {}) => {
-      if(SCRIPT_URL === "URL_APPS_SCRIPT_ANDA_TEMPEL_DISINI") {
-        throw new Error("Tolong isi SCRIPT_URL di dalam file index.html terlebih dahulu.");
-      }
-      try {
-        const response = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          // Menggunakan text/plain agar GAS tidak memblokir masalah CORS Preflight
-          body: JSON.stringify({ action, ...payload }), 
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-        });
-        const result = await response.json();
-        if (result.status === 'success') {
-          return result.data;
-        } else {
-          throw new Error(result.message);
-        }
-      } catch (error) {
-        throw error;
-      }
-    };
-
     const formatTime = (s) => `${Math.floor(s/60)}:${s%60 < 10 ? '0':''}${s%60}`;
+
+    // ==========================================
+    // ⚠️ ISI DENGAN KUNCI SUPABASE ANDA DI SINI:
+    // ==========================================
+    const URL_SUPABASE_ANDA = "https://fggfuviaytguccxycelr.supabase.co";
+    const ANON_KEY_SUPABASE_ANDA = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZnZ2Z1dmlheXRndWNjeHljZWxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MzgxNjksImV4cCI6MjA5NDMxNDE2OX0.UEfJauvzVGTMzHet26IwwZvgXfMCA2Cpm_KzPB75sTI";
+
+    // Auto-Cleaner URL Supabase agar tidak error Storage
+    const S_URL = URL_SUPABASE_ANDA.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
+    const S_KEY = ANON_KEY_SUPABASE_ANDA;
+    const HEADERS = { 
+        "apikey": S_KEY, 
+        "Authorization": "Bearer " + S_KEY, 
+        "Content-Type": "application/json",
+        "Prefer": "return=representation, resolution=merge-duplicates"
+    };
 
     function App() {
       const [userUid, setUserUid] = useState(null);
@@ -94,16 +82,18 @@
       const [selectedAdminGrade, setSelectedAdminGrade] = useState('1');
       const [activeTabAdmin, setActiveTabAdmin] = useState('tasks');
       const [adminSelectedStudent, setAdminSelectedStudent] = useState(null);
+      
+      // Student Task States
       const [selectedDay, setSelectedDay] = useState('Senin');
-      const [studentReportInput, setStudentReportInput] = useState({ book: '', page: '' });
+      const [studentReportInput, setStudentReportInput] = useState({ book: '' }); // 1 Input Saja (Keterangan)
       const [activeQuizIndex, setActiveQuizIndex] = useState(0);
       const [quizAnswersMap, setQuizAnswersMap] = useState({}); 
 
+      // Audio States
       const [isRecording, setIsRecording] = useState(false);
       const [recordingTime, setRecordingTime] = useState(0);
       const [audioBase64, setAudioBase64] = useState(null);
       const [audioMimeType, setAudioMimeType] = useState('');
-      
       const [adminRecDay, setAdminRecDay] = useState(null);
       const [adminRecordingTime, setAdminRecordingTime] = useState(0);
 
@@ -112,7 +102,7 @@
       const timerIntervalRef = useRef(null);
       const micRequestedRef = useRef(false);
 
-      // --- LOGIKA MINTA IZIN MIC ---
+      // --- LOGIKA MINTA IZIN MIC OTOMATIS PADA SENTUHAN PERTAMA ---
       useEffect(() => {
         const initMic = async () => {
           if (micRequestedRef.current) return;
@@ -120,23 +110,64 @@
              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
              stream.getTracks().forEach(track => track.stop()); 
              micRequestedRef.current = true; 
-          } catch(e) {
-             console.log("Izin mikrofon tertunda atau ditolak: ", e);
-          }
+          } catch(e) { console.log("Mic delayed"); }
         };
         initMic();
-        const handleInteraction = () => {
-          initMic(); document.removeEventListener('click', handleInteraction); document.removeEventListener('touchstart', handleInteraction);
-        };
-        document.addEventListener('click', handleInteraction); document.addEventListener('touchstart', handleInteraction);
+        const handleInteraction = () => { initMic(); document.removeEventListener('click', handleInteraction); document.removeEventListener('touchstart', handleInteraction); };
+        document.addEventListener('click', handleInteraction);
+        document.addEventListener('touchstart', handleInteraction);
         return () => { document.removeEventListener('click', handleInteraction); document.removeEventListener('touchstart', handleInteraction); };
       }, []);
+
+      const fetchData = async (isInitialLoad = false) => {
+        if (!S_KEY || S_KEY.includes("MASUKKAN")) return;
+        try {
+          // 1. Fetch Class Tasks
+          const taskRes = await fetch(`${S_URL}/rest/v1/class_tasks`, { headers: HEADERS });
+          if(taskRes.ok) {
+            const taskData = await taskRes.json();
+            const mappedTasks = {};
+            taskData.forEach(row => { mappedTasks[row.grade] = row.schedule_json; });
+            if (role !== 'admin' || isInitialLoad) setAllTasks(mappedTasks);
+          }
+
+          // 2. Fetch Students
+          const stdRes = await fetch(`${S_URL}/rest/v1/students`, { headers: HEADERS });
+          let studentsMap = {};
+          if(stdRes.ok) {
+            (await stdRes.json()).forEach(s => { studentsMap[s.uid] = { ...s, progress: {} }; });
+          }
+
+          // 3. Fetch Progress
+          const progRes = await fetch(`${S_URL}/rest/v1/student_progress`, { headers: HEADERS });
+          if(progRes.ok) {
+            (await progRes.json()).forEach(p => {
+              if (studentsMap[p.uid]) {
+                studentsMap[p.uid].progress[p.day] = {
+                  completed: true, report: p.report, score: p.score, audioData: p.audio_url, timestamp: p.timestamp
+                };
+              }
+            });
+          }
+
+          const finalStudents = Object.values(studentsMap);
+          setStudents(finalStudents);
+          
+          if (role === 'student' && userUid && studentsMap[userUid]) {
+             setStudentProgress(studentsMap[userUid].progress);
+          }
+          
+          setAdminSelectedStudent(prev => {
+             if (prev && studentsMap[prev.uid]) return studentsMap[prev.uid];
+             return prev;
+          });
+        } catch(e) { console.error(e); }
+      };
 
       useEffect(() => {
         const savedRole = localStorage.getItem('role');
         const uid = localStorage.getItem('app_uid');
         if (uid) setUserUid(uid);
-
         if (savedRole) {
           setRole(savedRole);
           if (savedRole === 'admin') setCurrentView('admin-dashboard');
@@ -148,31 +179,9 @@
         }
       }, []);
 
-      const fetchData = async (isInitialLoad = false) => {
-        try {
-          const res = await runApi('getInitialData');
-          if (role !== 'admin' || isInitialLoad) setAllTasks(res.tasks || {});
-          setStudents(res.students || []);
-          
-          if (role === 'student' && userUid) {
-            const myData = res.students.find(s => s.uid === userUid);
-            if (myData && myData.progress) setStudentProgress(myData.progress);
-          }
-          
-          setAdminSelectedStudent(prev => {
-             if (prev) {
-                const updatedSelected = res.students.find(s => s.uid === prev.uid);
-                return updatedSelected || prev;
-             }
-             return prev;
-          });
-        } catch(e) { showToast(e.message || "Gagal sinkron data.", "error"); }
-      };
-
       useEffect(() => {
         setIsLoading(true);
-        fetchData(true).then(() => setIsLoading(false)).catch(() => setIsLoading(false)); 
-        
+        fetchData(true).then(() => setIsLoading(false)); 
         let interval;
         if (currentView !== 'login') { interval = setInterval(() => fetchData(false), 15000); }
         return () => { if (interval) clearInterval(interval); }
@@ -180,22 +189,29 @@
 
       useEffect(() => {
         if (role === 'student' && studentData.name && userUid) {
-          runApi('updatePresence', { uid: userUid, name: studentData.name, grade: studentData.grade });
+          fetch(`${S_URL}/rest/v1/students`, {
+            method: 'POST',
+            headers: HEADERS,
+            body: JSON.stringify({ uid: userUid, name: studentData.name, grade: studentData.grade, last_active_ts: Date.now() })
+          }).catch(e => console.log(e));
         }
       }, [role, studentData.name, currentView]);
 
       useEffect(() => {
-        setActiveQuizIndex(0); setQuizAnswersMap({}); setStudentReportInput({ book: '', page: '' }); setAudioBase64(null);
+        setActiveQuizIndex(0); setQuizAnswersMap({}); setStudentReportInput({ book: '' }); setAudioBase64(null);
         if(isRecording) stopRecording();
       }, [selectedDay]);
 
       useEffect(() => {
         if (isRecording || adminRecDay) {
           timerIntervalRef.current = setInterval(() => {
-            if(adminRecDay) setAdminRecordingTime(prev => { if (prev >= 300) { stopAdminRecording(); return 300; } return prev + 1; });
-            else setRecordingTime(prev => { if (prev >= 300) { stopRecording(); return 300; } return prev + 1; });
+            if(adminRecDay) {
+              setAdminRecordingTime(prev => { if (prev >= 300) { stopAdminRecording(); return 300; } return prev + 1; });
+            } else {
+              setRecordingTime(prev => { if (prev >= 300) { stopRecording(); return 300; } return prev + 1; });
+            }
           }, 1000);
-        } else clearInterval(timerIntervalRef.current);
+        } else { clearInterval(timerIntervalRef.current); }
         return () => clearInterval(timerIntervalRef.current);
       }, [isRecording, adminRecDay]);
 
@@ -217,9 +233,7 @@
           };
           mediaRecorder.start();
           setRecordingTime(0); setIsRecording(true);
-        } catch (err) { 
-          showToast(`Mic Error: ${err.message || err.name}`, "error"); 
-        }
+        } catch (err) { showToast("Izin mikrofon ditolak.", "error"); }
       };
 
       const stopRecording = () => {
@@ -230,6 +244,7 @@
         }
       };
 
+      // --- LOGIC AUDIO ADMIN (Fix Bug State Closure) ---
       const startAdminRecording = async (day) => {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -237,6 +252,9 @@
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
           mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+          
+          const targetDay = day; // Kunci Closure
+
           mediaRecorder.onstop = () => {
             const type = mediaRecorder.mimeType || 'audio/webm';
             const audioBlob = new Blob(audioChunksRef.current, { type });
@@ -246,10 +264,10 @@
               setAllTasks(prev => {
                 const ns = {...prev};
                 if(!ns[selectedAdminGrade]) ns[selectedAdminGrade] = {};
-                if(!ns[selectedAdminGrade][adminRecDay]) ns[selectedAdminGrade][adminRecDay] = {type:'baca'};
-                ns[selectedAdminGrade][adminRecDay].teacherAudioBase64 = reader.result;
-                ns[selectedAdminGrade][adminRecDay].teacherAudioMimeType = type;
-                ns[selectedAdminGrade][adminRecDay].teacherAudioUrl = null; 
+                if(!ns[selectedAdminGrade][targetDay]) ns[selectedAdminGrade][targetDay] = {type:'baca'};
+                ns[selectedAdminGrade][targetDay].teacherAudioBase64 = reader.result;
+                ns[selectedAdminGrade][targetDay].teacherAudioMimeType = type;
+                ns[selectedAdminGrade][targetDay].teacherAudioUrl = null; 
                 return ns;
               });
               setAdminRecDay(null);
@@ -257,7 +275,7 @@
           };
           mediaRecorder.start();
           setAdminRecordingTime(0); setAdminRecDay(day);
-        } catch (err) { showToast(`Mic Error: ${err.message || err.name}`, "error"); }
+        } catch (err) { showToast("Izin mikrofon ditolak.", "error"); }
       };
 
       const stopAdminRecording = () => {
@@ -270,7 +288,35 @@
       const handleAdminSaveTasks = async () => {
         setIsLoading(true);
         try {
-          const updatedTasks = await runApi('saveTasks', { tasksObj: allTasks });
+          const updatedTasks = {...allTasks};
+          for (const grade in updatedTasks) {
+            const schedule = updatedTasks[grade];
+            for (const day in schedule) {
+                const t = schedule[day];
+                if (t.teacherAudioBase64) {
+                    try {
+                        const blob = await (await fetch(t.teacherAudioBase64)).blob();
+                        const fileName = `guru_kls${grade}_${day}_${Date.now()}.webm`;
+                        const uploadRes = await fetch(`${S_URL}/storage/v1/object/pjj_audio/${fileName}`, {
+                            method: 'POST',
+                            headers: { "apikey": S_KEY, "Authorization": "Bearer " + S_KEY, "Content-Type": blob.type },
+                            body: blob
+                        });
+                        if (uploadRes.ok) {
+                            t.teacherAudioUrl = `${S_URL}/storage/v1/object/public/pjj_audio/${fileName}`;
+                            delete t.teacherAudioBase64;
+                            delete t.teacherAudioMimeType;
+                        }
+                    } catch(e) { console.log("Storage upload fallback"); }
+                }
+            }
+            // Update Supabase DB Class Tasks
+            await fetch(`${S_URL}/rest/v1/class_tasks`, {
+                method: 'POST',
+                headers: HEADERS,
+                body: JSON.stringify({ grade: grade, schedule_json: schedule })
+            });
+          }
           setAllTasks(updatedTasks); 
           showToast(`Jadwal Kelas ${selectedAdminGrade} tersimpan!`);
         } catch(e) { showToast("Gagal menyimpan.", "error"); }
@@ -283,27 +329,52 @@
           finalScore = taskData.calculatedScore; reportText = `Mengerjakan Kuis (Nilai: ${finalScore})`;
         } else {
           if (!studentReportInput.book) return showToast("Isi laporanmu dulu!", "error");
-          reportText = `${studentReportInput.book} Hal/Ayat: ${studentReportInput.page}`;
+          reportText = studentReportInput.book; // Menggunakan 1 kolom laporan saja
         }
         setIsLoading(true);
         try {
-          await runApi('submitTask', { uid: userUid, name: studentData.name, day, report: reportText, score: finalScore, audioBase64, mimeType: audioMimeType });
+          let finalAudioUrl = "";
+          if (audioBase64) {
+              try {
+                  const blob = await (await fetch(audioBase64)).blob();
+                  const safeName = studentData.name.replace(/[^a-zA-Z0-9]/g, "_");
+                  const fileName = `siswa_${safeName}_${day}_${Date.now()}.webm`;
+                  const uploadRes = await fetch(`${S_URL}/storage/v1/object/pjj_audio/${fileName}`, {
+                      method: 'POST',
+                      headers: { "apikey": S_KEY, "Authorization": "Bearer " + S_KEY, "Content-Type": audioMimeType },
+                      body: blob
+                  });
+                  if (uploadRes.ok) finalAudioUrl = `${S_URL}/storage/v1/object/public/pjj_audio/${fileName}`;
+                  else finalAudioUrl = audioBase64; // Fallback
+              } catch(e) { finalAudioUrl = audioBase64; }
+          }
+
+          const id = `${userUid}_${day}`;
+          await fetch(`${S_URL}/rest/v1/student_progress`, {
+              method: 'POST',
+              headers: HEADERS,
+              body: JSON.stringify({
+                  id: id, uid: userUid, day: day, report: reportText, score: finalScore, audio_url: finalAudioUrl, timestamp: new Date().toISOString()
+              })
+          });
+
           showToast("Tugas berhasil dikirim!");
-          setStudentReportInput({ book: '', page: '' }); setActiveQuizIndex(0); setQuizAnswersMap({}); setAudioBase64(null);
+          setStudentReportInput({ book: '' }); setActiveQuizIndex(0); setQuizAnswersMap({}); setAudioBase64(null);
           await fetchData(true);
         } catch(e) { showToast("Gagal mengirim tugas.", "error"); }
         setIsLoading(false);
       };
 
+      // Extractor Youtube Tahan Banting
       const extractVideoID = (url) => {
-        if(!url) return null; const m = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
-        return (m && m[2].length === 11) ? m[2] : null;
+        if(!url) return null; 
+        const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+        return (m && m[1]) ? m[1] : null;
       };
       
       const isOnline = (ts) => ts && (new Date().getTime() - ts) < 15 * 60 * 1000;
       const logout = () => { localStorage.removeItem('role'); setRole(null); setAdminPinInput(''); setCurrentView('login'); };
 
-      // --- Components ---
       const ToastMessage = () => {
         if (!toast) return null;
         return (
@@ -324,38 +395,27 @@
         );
       };
 
-      // ================= VIEWS =================
       const renderLogin = () => {
-        const requestMicPermissionFallback = async () => {
-          try {
-             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-             stream.getTracks().forEach(track => track.stop());
-          } catch(e) {
-             showToast("Info: Izin mikrofon blm diberikan. Fitur suara mungkin terkendala.", "error");
-          }
-        };
-
         const loginStudent = async () => {
           const { name, password, grade } = studentData;
           if (name && password && grade) {
             const normalizedName = name.trim().toLowerCase();
             const targetUid = 'std_' + btoa(encodeURIComponent(normalizedName + '||' + password));
-            
             const existingStudent = students.find(s => s.name.trim().toLowerCase() === normalizedName);
+            
             if (existingStudent && existingStudent.uid !== targetUid) {
               showToast("Nama ini sudah terdaftar dengan password yang berbeda!", "error"); return;
             }
-            
-            if(!micRequestedRef.current) await requestMicPermissionFallback();
+            if(!micRequestedRef.current) { try { const s = await navigator.mediaDevices.getUserMedia({audio:true}); s.getTracks().forEach(t=>t.stop()); }catch(e){} }
             
             localStorage.setItem('role', 'student'); localStorage.setItem('sName', name); localStorage.setItem('sGrade', grade);
             localStorage.setItem('app_uid', targetUid); setUserUid(targetUid); setRole('student'); setCurrentView('student-dashboard');
-          } else { showToast("Isi nama, password, dan kelas dulu ya!", "error"); }
+          } else showToast("Isi nama, password, dan kelas dulu ya!", "error");
         };
 
         const loginAdmin = async () => {
           if(adminPinInput === ADMIN_PIN) { 
-            if(!micRequestedRef.current) await requestMicPermissionFallback();
+            if(!micRequestedRef.current) { try { const s = await navigator.mediaDevices.getUserMedia({audio:true}); s.getTracks().forEach(t=>t.stop()); }catch(e){} }
             let adminUid = localStorage.getItem('app_uid');
             if(!adminUid) { adminUid = 'admin_' + Date.now(); localStorage.setItem('app_uid', adminUid); setUserUid(adminUid); }
             localStorage.setItem('role', 'admin'); setRole('admin'); setCurrentView('admin-dashboard'); 
@@ -511,9 +571,12 @@
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Arahan Suara Doa/Hadits (Opsional)</label>
                               
                               {(task.teacherAudioUrl || task.teacherAudioBase64) && !isRecThisDay ? (
-                                <div className="flex items-center space-x-3 bg-emerald-50 p-2 rounded-xl border border-emerald-200">
-                                  <audio controls className="h-10 flex-1 outline-none" src={task.teacherAudioBase64 || task.teacherAudioUrl}></audio>
-                                  <button onClick={() => { updateTaskData(day, 'teacherAudioUrl', null); updateTaskData(day, 'teacherAudioBase64', null); }} className="text-red-500 hover:bg-red-100 p-2 rounded-lg" title="Hapus"><i className="ph-bold ph-trash"></i></button>
+                                <div className="flex flex-col space-y-2 bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                                  <audio controls className="w-full h-10 outline-none rounded-lg" src={task.teacherAudioBase64 || task.teacherAudioUrl}></audio>
+                                  <div className="flex justify-between items-center mt-1">
+                                    <a href={task.teacherAudioBase64 || task.teacherAudioUrl} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-emerald-700 bg-emerald-200 px-2 py-1 rounded">Buka di Tab Baru</a>
+                                    <button onClick={() => { updateTaskData(day, 'teacherAudioUrl', null); updateTaskData(day, 'teacherAudioBase64', null); }} className="text-red-500 hover:bg-red-100 px-2 py-1 rounded text-[10px] font-bold"><i className="ph-bold ph-trash mr-1"></i>Hapus Suara</button>
+                                  </div>
                                 </div>
                               ) : isRecThisDay ? (
                                 <div className="flex items-center space-x-3 bg-red-50 border border-red-200 p-2 rounded-xl">
@@ -561,7 +624,7 @@
                       </thead>
                       <tbody className="text-sm">
                         {students.filter(s => selectedAdminGrade === 'All' || s.grade == selectedAdminGrade).map(student => {
-                          const online = isOnline(student.lastActive);
+                          const online = isOnline(student.lastActive_ts);
                           return (
                             <tr key={student.uid} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                               <td className="p-4 font-bold text-slate-800">{student.name}</td>
@@ -576,44 +639,42 @@
                   </div>
                 </div>
               )}
+            </div>
 
-              {/* MODAL LAPORAN SISWA - FIX AUDIO FALLBACK BUTTON */}
-              {adminSelectedStudent && (
-                <div className="fixed inset-0 bg-slate-900/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setAdminSelectedStudent(null)}>
-                  <div className="bg-white rounded-[2rem] w-full max-w-lg max-h-[85vh] overflow-y-auto relative shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                    <div className="sticky top-0 bg-white/90 backdrop-blur border-b border-slate-100 px-6 py-4 flex justify-between items-center z-10">
-                      <div><h2 className="text-xl font-extrabold text-slate-800">{adminSelectedStudent.name}</h2><p className="text-emerald-600 text-sm font-bold">Kelas {adminSelectedStudent.grade}</p></div>
-                      <button onClick={() => setAdminSelectedStudent(null)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-red-100 hover:text-red-500 transition-colors"><i className="ph-bold ph-x text-lg"></i></button>
-                    </div>
+            {/* MODAL LAPORAN SISWA */}
+            {adminSelectedStudent && (
+              <div className="fixed inset-0 bg-slate-900/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setAdminSelectedStudent(null)}>
+                <div className="bg-white rounded-[2rem] w-full max-w-lg max-h-[85vh] overflow-y-auto relative shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                  <div className="sticky top-0 bg-white/90 backdrop-blur border-b border-slate-100 px-6 py-4 flex justify-between items-center z-10">
+                    <div><h2 className="text-xl font-extrabold text-slate-800">{adminSelectedStudent.name}</h2><p className="text-emerald-600 text-sm font-bold">Kelas {adminSelectedStudent.grade}</p></div>
+                    <button onClick={() => setAdminSelectedStudent(null)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-red-100 hover:text-red-500 transition-colors"><i className="ph-bold ph-x text-lg"></i></button>
+                  </div>
 
-                    <div className="p-6 space-y-4">
-                      {DAYS.map(day => {
-                        const prog = adminSelectedStudent.progress?.[day];
-                        return (
-                          <div key={day} className="border-2 border-slate-100 rounded-2xl p-4 bg-slate-50">
-                            <h4 className="font-bold text-slate-700 mb-2 flex items-center"><div className="w-2 h-2 rounded-full bg-emerald-400 mr-2"></div> Hari {day}</h4>
-                            {prog ? (
-                              <div className="space-y-3">
-                                <p className="text-sm font-medium text-slate-600 bg-white p-3 rounded-xl border border-slate-200">{prog.report}</p>
-                                {prog.audioData && prog.audioData !== "error_upload" && (
-                                  <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex flex-col space-y-2">
-                                    <span className="text-[10px] font-bold text-emerald-600 uppercase flex items-center justify-between">
-                                      <span><i className="ph-fill ph-headphones mr-1"></i> Rekaman Siswa</span>
-                                      <a href={prog.audioData} target="_blank" className="text-blue-500 hover:underline">Buka Audio <i className="ph-bold ph-arrow-square-out"></i></a>
-                                    </span>
-                                    <audio controls className="w-full h-10 outline-none rounded-lg" src={prog.audioData}></audio>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (<p className="text-sm text-slate-400 font-medium italic p-2 bg-white rounded-xl border border-dashed border-slate-200 text-center">Belum dikerjakan</p>)}
-                          </div>
-                        );
-                      })}
-                    </div>
+                  <div className="p-6 space-y-4">
+                    {DAYS.map(day => {
+                      const prog = adminSelectedStudent.progress?.[day];
+                      return (
+                        <div key={day} className="border-2 border-slate-100 rounded-2xl p-4 bg-slate-50">
+                          <h4 className="font-bold text-slate-700 mb-2 flex items-center"><div className="w-2 h-2 rounded-full bg-emerald-400 mr-2"></div> Hari {day}</h4>
+                          {prog ? (
+                            <div className="space-y-3">
+                              <p className="text-sm font-medium text-slate-600 bg-white p-3 rounded-xl border border-slate-200">{prog.report}</p>
+                              {prog.audioData && prog.audioData !== "error_upload" && (
+                                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl mt-2">
+                                  <span className="text-[10px] font-bold text-emerald-600 uppercase flex items-center mb-2"><i className="ph-fill ph-headphones mr-1"></i> Rekaman Siswa</span>
+                                  <audio controls className="w-full h-10 outline-none rounded-lg" src={prog.audioData}></audio>
+                                  <a href={prog.audioData} target="_blank" rel="noreferrer" className="mt-2 text-[10px] bg-emerald-200 text-emerald-800 px-2 py-1 rounded inline-block font-bold">Buka di Tab Baru</a>
+                                </div>
+                              )}
+                            </div>
+                          ) : (<p className="text-sm text-slate-400 font-medium italic p-2 bg-white rounded-xl border border-dashed border-slate-200 text-center">Belum dikerjakan</p>)}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         );
       };
@@ -668,17 +729,15 @@
                   <div><h2 className="text-xl font-extrabold text-slate-800 leading-none mb-1">Hari {selectedDay}</h2><p className="text-xs font-bold text-slate-400 uppercase tracking-wide">{labelText}</p></div>
                 </div>
 
-                {todayTask && (todayTask.desc || todayTask.url || todayTask.teacherAudioUrl || (todayTask.type === 'quiz' && todayTask.questions?.length) || isAudioTask) ? (
+                {todayTask && (todayTask.desc || todayTask.url || todayTask.type === 'quiz' || isAudioTask || todayTask.teacherAudioUrl || todayTask.teacherAudioBase64) ? (
                   <div className="space-y-5">
                     
-                    {/* Pemutar Suara Arahan Guru - FIX BUG RENDER */}
-                    {todayTask.teacherAudioUrl && (
-                      <div className="bg-emerald-100 border border-emerald-200 rounded-2xl p-4 flex flex-col space-y-2">
-                         <span className="font-bold text-emerald-800 flex items-center justify-between">
-                           <span><i className="ph-fill ph-speaker-high mr-2 text-xl"></i> Arahan Suara Guru:</span>
-                           <a href={todayTask.teacherAudioUrl} target="_blank" className="text-xs text-blue-600 hover:underline">Buka Audio <i className="ph-bold ph-arrow-square-out"></i></a>
-                         </span>
-                         <audio src={todayTask.teacherAudioUrl} controls className="w-full h-10 outline-none rounded-lg"></audio>
+                    {/* Pemutar Suara Arahan Guru */}
+                    {(todayTask.teacherAudioUrl || todayTask.teacherAudioBase64) && (
+                      <div className="bg-emerald-100 border border-emerald-200 rounded-2xl p-4">
+                         <span className="font-bold text-emerald-800 flex items-center mb-2"><i className="ph-fill ph-speaker-high mr-2 text-xl"></i> Arahan Suara Guru:</span>
+                         <audio src={todayTask.teacherAudioBase64 || todayTask.teacherAudioUrl} controls className="w-full h-10 outline-none rounded-lg"></audio>
+                         <a href={todayTask.teacherAudioBase64 || todayTask.teacherAudioUrl} target="_blank" rel="noreferrer" className="mt-2 text-[10px] bg-emerald-200 text-emerald-800 px-2 py-1 rounded inline-block font-bold">Buka di Tab Baru</a>
                       </div>
                     )}
 
@@ -686,9 +745,25 @@
                       <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-700 text-sm leading-relaxed font-medium"><span className="font-bold text-emerald-600 block mb-1">📝 Pesan Guru:</span>{todayTask.desc}</div>
                     )}
                     
+                    {/* YOUTUBE IFRAME STANDAR (Bypass Error 153) */}
                     {todayTask.type === 'youtube' && todayTask.url && (
-                      <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-inner border-4 border-slate-100">
-                        {extractVideoID(todayTask.url) ? <iframe className="w-full h-full" src={`https://www.youtube.com/embed/${extractVideoID(todayTask.url)}`} frameBorder="0" allowFullScreen></iframe> : <div className="flex flex-col items-center justify-center h-full text-slate-500 bg-slate-100"><i className="ph-fill ph-video-camera text-3xl mb-2 opacity-50"></i><p className="text-xs font-bold">Link video tidak valid</p></div>}
+                      <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-inner border-4 border-slate-100 relative">
+                        {extractVideoID(todayTask.url) ? (
+                          <iframe 
+                            className="w-full h-full absolute inset-0" 
+                            src={`https://www.youtube.com/embed/${extractVideoID(todayTask.url)}?rel=0`} 
+                            title="YouTube video player"
+                            frameBorder="0" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            referrerPolicy="strict-origin-when-cross-origin"
+                            allowFullScreen
+                          ></iframe>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center h-full text-slate-500 bg-slate-100 absolute inset-0">
+                            <i className="ph-fill ph-video-camera text-3xl mb-2 opacity-50"></i>
+                            <p className="text-xs font-bold">Link video tidak valid</p>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -738,8 +813,13 @@
                             )}
                             <div>
                               <h3 className="font-bold text-emerald-700 text-sm mb-2 mt-4">Ketik Laporan:</h3>
-                              <input type="text" placeholder={todayTask.type==='hafal'?"Surah apa?":"Iqro/Surah apa?"} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 mb-3 text-sm font-medium focus:border-emerald-500 outline-none bg-slate-50" value={studentReportInput.book} onChange={e=>setStudentReportInput({...studentReportInput, book: e.target.value})} />
-                              <input type="text" placeholder="Halaman / Ayat?" className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-medium focus:border-emerald-500 outline-none bg-slate-50" value={studentReportInput.page} onChange={e=>setStudentReportInput({...studentReportInput, page: e.target.value})} />
+                              <textarea 
+                                  rows="3"
+                                  placeholder="Tulis Keterangan (Contoh: Sudah hafal Surah An-Nas / Iqro Jilid 4 Hal 15)" 
+                                  className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 mb-3 text-sm font-medium focus:border-emerald-500 outline-none bg-slate-50 resize-none" 
+                                  value={studentReportInput.book} 
+                                  onChange={e=>setStudentReportInput({ book: e.target.value })} 
+                              ></textarea>
                             </div>
                             <button onClick={() => handleStudentSubmitTask(selectedDay, todayTask)} disabled={!studentReportInput.book} className={`w-full py-4 rounded-xl font-bold text-white transition-all mt-2 ${studentReportInput.book ? 'bg-emerald-500 hover:bg-emerald-600 shadow-lg' : 'bg-slate-200 text-slate-400'}`}>Kirim Tugas {audioBase64?'& Rekaman':''}</button>
                           </div>
